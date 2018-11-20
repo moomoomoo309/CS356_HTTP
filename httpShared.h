@@ -12,6 +12,7 @@
 #define numRetries 3
 #define datetimeBufferSize 30
 #define serverPort 12002
+#define maxPending 8
 
 const int bufSize = 8192;
 
@@ -21,29 +22,32 @@ const int bufSize = 8192;
 #define or ||
 #endif
 
+// Error, but with printf capability!
 void error(char* formatStr, ...)
 {
     va_list args;
     va_start(args, formatStr);
     char* errorMsg = malloc(2048);
-    vsprintf(errorMsg, formatStr, args);
+    vsnprintf(errorMsg, 2048, formatStr, args);
     perror(errorMsg);
 }
 
+// Same as send, but retries numRetries times, and returns a bool.
 bool Send(int sock, char* buf, size_t bufSize)
 {
     for (int i=0; i<numRetries; i++)
-        if (send(sock, buf, bufSize, 0) != -1)
+        if (send(sock, buf, bufSize - 1, 0) != -1)
             break;
         else if (i == numRetries - 1)
             return false;
     return true;
 }
 
+// Same as recv, but retries numRetries times, and returns a bool.
 bool Recv(int sock, char* buf, size_t bufSize)
 {
     for (int i=0; i<numRetries; i++)
-        if (recv(sock, buf, bufSize, 0) != -1)
+        if (recv(sock, buf, bufSize - 1, 0) != -1)
             break;
         else if (i == numRetries - 1)
             return false;

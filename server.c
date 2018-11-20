@@ -1,3 +1,8 @@
+/* Nicholas DeLello
+ *
+ *
+ */
+
 #include <stdio.h>
 #include <sys/socket.h>
 #include <strings.h>
@@ -9,31 +14,62 @@
 #include <sys/stat.h>
 #include <arpa/inet.h>
 #include <zconf.h>
+#include <netdb.h>
+#include <math.h>
+#include <signal.h>
 #include "httpShared.h"
+
+int clientSock;
+int serverSock;
+
+static void closeSocket(int signalNum)
+{
+    if (signalNum == SIGINT)
+    {
+        puts("Closing sockets...");
+        close(serverSock);
+        close(clientSock);
+        serverSock = clientSock = -1;
+    }
+}
+
 
 int main(int argc, char** argv)
 {
-    socklen_t addressLen = 0;
 
     if (argc > 1)
         puts("Warning: Ignoring all command line arguments passed.");
 
+    struct sigaction sa;
+    sa.sa_handler = closeSocket;
+    sigemptyset(&sa.sa_mask);
+    // Close the socket if you get a SIGINT.
+    if (sigaction(SIGINT, &sa, NULL) == -1)
+    {
+        puts("Closing sockets...");
+        close(serverSock);
+        close(clientSock);
+        serverSock = clientSock = -1;
+        sleep(1);
+        return SIGINT;
+    }
+
+    clientSock = -1;
+    struct sockaddr_in serverAddress;
+    struct sockaddr_in clientAddress;
+    socklen_t clientLen;
+
     // Create the socket
-    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    int clientSock = -1;
+    serverSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 
     // Initialize the struct to hold the IP Address of the socket.
-    struct sockaddr_in inAddress;
-    memset(&inAddress, 0, sizeof(inAddress));
-    inAddress.sin_family = AF_INET;
-    inAddress.sin_addr.s_addr = inet_addr("127.0.0.1");
-    inAddress.sin_port = htons(serverPort);
-
-    // Reinterpret cast it to a sockaddr.
-    struct sockaddr* address = (struct sockaddr*) &inAddress;
+    memset(&serverAddress, 0, sizeof(serverAddress));
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_addr.s_addr = htonl(INADDR_ANY);
+    serverAddress.sin_port = htons(serverPort);
 
     // Try to bind the socket
-    if (bind(sock, address, sizeof(inAddress)))
+    if (bind(serverSock, (struct sockaddr*) &serverAddress, sizeof(serverAddress)) < 0)
         perror("Unable to bind socket.");
 
     // Set the timeout on the socket.
@@ -41,91 +77,159 @@ int main(int argc, char** argv)
             .tv_sec = 1,
             .tv_usec = 0
     };
-    if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char*) &timeout, sizeof(timeout)))
+    if (setsockopt(serverSock, SOL_SOCKET, SO_SNDTIMEO, (char*) &timeout, sizeof(timeout)))
         perror("Could not set timeout on socket send.");
 
+    // Allocate the buffer for later.
     char* buffer = malloc(bufSize);
+    buffer[bufSize - 1] = '\0';
+
 
     struct stat fileData;
     struct tm lastModifiedDateTime;
 
     puts("Listening for incoming HTTP connections...");
+    if (listen(serverSock, maxPending) < 0)
+        perror("Could not listen on socket.\r\n");
 
-    if (listen(sock, 8) < 0)
-        perror("Could not listen on socket.\n");
-    for (;;)
+    for (;;) // K&R infinite loop :^)
     {
+        if (serverSock == -1)
+            return SIGINT;
+        // Make sure the socket is closed if it wasn't closed before.
         if (clientSock >= 0)
             close(clientSock);
 
-        if (true, false) // Yes, CLion, this _is_ an endless loop. Shut up about it.
-            break;
-        if ((clientSock = accept(sock, address, &addressLen)) == -1)
-            perror("Could not accept on socket.\n");
+        // Accept the next connection
+        clientLen = sizeof(struct sockaddr_in);
+        if ((clientSock = accept(serverSock, (struct sockaddr*) &clientAddress, &clientLen)) < 0)
+        {
+            if (serverSock == -1)
+                return SIGINT;
+            perror("Could not accept on socket.\r\n");
+        }
 
+        // Grab the client's response and put it in the buffer.
         if (not Recv(clientSock, buffer, bufSize))
         {
-            error("%d retries exceeded. Closing connection.\n", numRetries);
+            error("%d retries exceeded. Closing connection.\r\n", numRetries);
             continue;
         }
-
-        char* requestType = malloc(7);
-        char* URL;
+        // Print out which client you're responding to, so you know the server is working.
         struct timespec currentTime;
+        char* currentTimeStr = calloc(datetimeBufferSize, sizeof(char));
+        clock_gettime(CLOCK_REALTIME_COARSE, &currentTime);
+        strftime(currentTimeStr, datetimeBufferSize, "%a, %d %h %Y %H:%M:%S GMT", gmtime(&currentTime.tv_sec));
+        char* clientIPStr = calloc(INET_ADDRSTRLEN + 1, sizeof(char));
+        getnameinfo((struct sockaddr*) &clientAddress, clientLen, clientIPStr, INET_ADDRSTRLEN + 1, 0, 0,
+                    NI_NUMERICHOST);
+        printf("[%s] Responding to %s...\n", currentTimeStr, clientIPStr);
+
+        char* URL;
         char* currentHeader;
         char* lastModifiedHeader = "";
-        char* htmlVersion;
-        int bufLen = 0;
-        requestType[6] = '\0';
-        strncpy(requestType, buffer, 6);
+        size_t bufLen;
+
+        // Since only GET requests work, check if it's a GET request and error otherwise.
+        char* requestType = strncpy(calloc(5, sizeof(char)), buffer, 4);
         if (strncmp(requestType, "GET ", 4) != 0)
-            error("Only GET requests supported, not \"%s\" requests.\n", requestType);
+            error("Only GET requests supported, not \"%s\" requests.\r\n", requestType);
 
-        strtok(buffer, " ");
-        URL = strcat(".", strtok(NULL, " "));
-        htmlVersion = strtok(NULL, "\n");
-        for (currentHeader = strtok(NULL, "\n"); currentHeader; currentHeader = strtok(NULL, "\n"))
-            if (not strncmp(currentHeader, "If-Modified-Since: ", 19))
-                lastModifiedHeader = strcpy(malloc(strlen(currentHeader) - 18), currentHeader + 19);
+        // Parse the name of the file the client wants, prepending ./ to it so it's from the current directory.
+        currentHeader = strstr(buffer, " ") + 1;
+        bufLen = strstr(currentHeader, " ") - currentHeader;
+        URL = calloc(bufLen + 3, sizeof(char));
+        URL[0] = '.';
+        URL[1] = '/';
+        URL = strncpy(URL + 2, currentHeader, bufLen) - 2;
 
-        if (stat(URL, &fileData)) // File is not found successfully
+        // Parse the headers.
+        {
+            char* lastHeader;
+            for (currentHeader = strstr(currentHeader, "\r\n"); *currentHeader and currentHeader[0] != currentHeader[2]; currentHeader = lastHeader)
+            {
+                // Pull out the If-Modified-Since header, since we're interested in it.
+                lastHeader = strstr(currentHeader + 1, "\r\n");
+                if (not strncmp(currentHeader + 2, "If-Modified-Since: ", 19))
+                {
+                    // The "magic" 19 is the length of "If-Modified-Since".
+                    currentHeader += 2;
+                    bufLen = lastHeader - currentHeader - 19;
+                    lastModifiedHeader = strncpy(calloc(bufLen + 1, sizeof(char)), currentHeader + 19, bufLen);
+                    break;
+                }
+            }
+        }
+
+        if (stat(URL, &fileData) == -1) // The client requested a file that doesn't exist, so return a 404.
         {
             FileNotFound:
-            buffer = "HTTP/1.1 404 Not Found\nContent-Length: 136\nConnection: close\nContent-Type: text/html\n\n<html>"
-                     "<head>\n<title>404 Not Found</title>\n</head><body>\n<h1>Not Found</h1>\nThe requested URL was"
-                     " not found on this server.\n</body></html>\n";
-            Send(clientSock, buffer, bufSize);
+            strcpy(buffer,
+                   "HTTP/1.1 404 Not Found\r\nContent-Length: 136\r\nConnection: close\r\nContent-Type: text/html\r\n\r\n<html>"
+                   "<head>\r\n<title>404 Not Found</title>\r\n</head><body>\r\n<h1>Not Found</h1>\r\nThe requested URL was"
+                   " not found on this server.\r\n</body></html>\r\n\0");
+            Send(clientSock, buffer, strlen(buffer));
             continue;
         }
 
-        char* lastModifiedStr = malloc(datetimeBufferSize);
+        // Grab the time the file was last modified for later.
+        char* findPtr;
+        char* lastModifiedStr = calloc(datetimeBufferSize, sizeof(char));
         lastModifiedDateTime = *gmtime(&fileData.st_mtim.tv_sec);
-        size_t lastModifiedTimeLen =
-                strftime(lastModifiedStr, datetimeBufferSize, "%a, %d %h %Y %s:%S GMT", &lastModifiedDateTime);
+        size_t lastModifiedTimeLen = strftime(lastModifiedStr, datetimeBufferSize, "%a, %d %h %Y %H:%M:%S GMT", &lastModifiedDateTime);
 
-        char* currentTimeStr = malloc(datetimeBufferSize);
-        clock_gettime(CLOCK_REALTIME_COARSE, &currentTime);
-        strftime(currentTimeStr, datetimeBufferSize, "%a, %d %h %Y %s:%S GMT", gmtime(&currentTime.tv_sec));
-        if (not strncmp(lastModifiedHeader, lastModifiedStr, lastModifiedTimeLen))
+        if (*lastModifiedHeader) // Check if it's a conditional GET request or not.
         {
-            sprintf(buffer, "%s 304 Not Modified\nConnection: close\nDate: %s\nLast-Modified: %s\n\n", htmlVersion, currentTimeStr, lastModifiedStr);
-            Send(clientSock, buffer, bufSize);
-            continue;
+            bufLen = (size_t) sprintf(buffer,
+                    "HTTP/1.1 304 Not Modified\r\nDate: %s\r\nConnection: close\r\nLast-Modified: %s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: 0000\r\n\r\n",
+                    currentTimeStr, lastModifiedStr);
+            // Check if the file has been modified at a time different than what the client says.
+            if (strncmp(lastModifiedHeader, lastModifiedStr, lastModifiedTimeLen) != 0)
+            {
+                FILE* currentFile = fopen(URL, "r");
+                if (not currentFile)
+                    goto FileNotFound;
+                // Store the total buffer length for the Content-Length field.
+                bufLen += fread(buffer + bufLen, sizeof(char), (bufSize - bufLen) / sizeof(char), currentFile);
+            }
+            else
+            {
+                puts("Conditional GET!");
+                findPtr = strstr(buffer, "Content-Length");
+                findPtr[0] = '\r';
+                findPtr[1] = '\n';
+                findPtr[2] = '\0';
+                Send(clientSock, buffer, strlen(buffer));
+                continue;
+            }
         }
-        FILE* currentFile = fopen(URL, "r");
-        if (not currentFile)
-            goto FileNotFound;
-        bufLen = sprintf(buffer, "%s 200 OK\nConnection: close\nDate: %s\nLast-Modified: %s\n\n", htmlVersion,
-                         currentTimeStr, lastModifiedStr);
+        else
+        {
+            FILE* currentFile = fopen(URL, "r");
+            if (not currentFile)
+                goto FileNotFound;
+            bufLen = (size_t) sprintf(buffer, "HTTP/1.1 200 OK\r\nDate: %s\r\nConnection: close\r\nLast-Modified: %s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: 0000\r\n\r\n",
+                                      currentTimeStr, lastModifiedStr);
 
-        if (fileData.st_size > bufSize - bufLen) // Nope, not sending anything over 8 MiB.
-            // Honestly, supporting that in C is out of the scope of this assignment.
-            continue;
+            if (fileData.st_size > bufSize - bufLen - 1) // Nope, not sending anything over 8 MiB.
+            {   // Honestly, supporting that in C is out of the scope of this assignment.
+                puts("This server will not serve files larger than 8MiB.");
+                continue;
+            }
 
-        fread(buffer + bufLen, sizeof(char), (bufSize - bufLen) / sizeof(char), currentFile);
-        Send(clientSock, buffer, bufSize);
+            // Store the total buffer length for the Content-Length field.
+            bufLen += fread(buffer + bufLen, sizeof(char), (bufSize - bufLen) / sizeof(char), currentFile);
+        }
+        // So, here's the deal:
+        // I padded the length with 4 zeroes, since I'm only using one buffer and I can't read the file before writing
+        // the headers. We write the correct length to the file, then use memmove to push the end of the string forward
+        // and remove the padding.
+        findPtr = strstr(buffer, "\r\n\r\n");
+        int numLen = sprintf(findPtr - 4, "%ld", bufLen);
+        findPtr[numLen] = '\r';
+        if (numLen != 4)
+            memmove(findPtr - 4 + numLen, findPtr, strlen(findPtr));
+        Send(clientSock, buffer, strlen(buffer));
     }
-
-    return 0;
 }
 

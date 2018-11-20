@@ -1,0 +1,14 @@
+Name: Nicholas DeLello
+UCID: njd42
+Class section: 003
+Programming language and version: C99
+Testing environment:
+    OS: Linux (amd64)
+    IDE with entrance file: CLion. CMakeLists.txt
+    Command lines:
+        Can be compiled manually as follows:
+            1. Ensure cmake and GNU Make are installed.
+            2. cd into this directory.
+            3. Run `cmake .`
+            4. Run `make`
+
