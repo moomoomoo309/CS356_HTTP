@@ -92,6 +92,11 @@ int main(int argc, char** argv)
     if (listen(serverSock, maxPending) < 0)
         perror("Could not listen on socket.\r\n");
 
+    char* currentTimeStr = calloc(datetimeBufferSize, sizeof(char));
+    char* clientIPStr = calloc(INET_ADDRSTRLEN + 1, sizeof(char));
+    char* lastModifiedStr = calloc(datetimeBufferSize, sizeof(char));
+
+
     for (;;) // K&R infinite loop :^)
     {
         if (serverSock == -1)
@@ -106,24 +111,15 @@ int main(int argc, char** argv)
         {
             if (serverSock == -1)
                 return SIGINT;
-            perror("Could not accept on socket.\r\n");
+            perror("Could not accept on socket.\n");
         }
 
         // Grab the client's response and put it in the buffer.
         if (not Recv(clientSock, buffer, bufSize))
         {
-            error("%d retries exceeded. Closing connection.\r\n", numRetries);
+            error("%d retries exceeded. Closing connection.\n", numRetries);
             continue;
         }
-        // Print out which client you're responding to, so you know the server is working.
-        struct timespec currentTime;
-        char* currentTimeStr = calloc(datetimeBufferSize, sizeof(char));
-        clock_gettime(CLOCK_REALTIME_COARSE, &currentTime);
-        strftime(currentTimeStr, datetimeBufferSize, "%a, %d %h %Y %H:%M:%S GMT", gmtime(&currentTime.tv_sec));
-        char* clientIPStr = calloc(INET_ADDRSTRLEN + 1, sizeof(char));
-        getnameinfo((struct sockaddr*) &clientAddress, clientLen, clientIPStr, INET_ADDRSTRLEN + 1, 0, 0,
-                    NI_NUMERICHOST);
-        printf("[%s] Responding to %s...\n", currentTimeStr, clientIPStr);
 
         char* URL;
         char* currentHeader;
@@ -133,7 +129,7 @@ int main(int argc, char** argv)
         // Since only GET requests work, check if it's a GET request and error otherwise.
         char* requestType = strncpy(calloc(5, sizeof(char)), buffer, 4);
         if (strncmp(requestType, "GET ", 4) != 0)
-            error("Only GET requests supported, not \"%s\" requests.\r\n", requestType);
+            error("Only GET requests supported, not \"%s\" requests.\n", requestType);
 
         // Parse the name of the file the client wants, prepending ./ to it so it's from the current directory.
         currentHeader = strstr(buffer, " ") + 1;
@@ -145,16 +141,16 @@ int main(int argc, char** argv)
 
         // Parse the headers.
         {
-            char* lastHeader;
-            for (currentHeader = strstr(currentHeader, "\r\n"); *currentHeader and currentHeader[0] != currentHeader[2]; currentHeader = lastHeader)
+            char* currentHeaderEnd;
+            for (currentHeader = strstr(currentHeader, "\r\n"); *currentHeader and currentHeader[0] != currentHeader[2]; currentHeader = currentHeaderEnd)
             {
                 // Pull out the If-Modified-Since header, since we're interested in it.
-                lastHeader = strstr(currentHeader + 1, "\r\n");
+                currentHeaderEnd = strstr(currentHeader + 1, "\r\n");
                 if (not strncmp(currentHeader + 2, "If-Modified-Since: ", 19))
                 {
                     // The "magic" 19 is the length of "If-Modified-Since".
                     currentHeader += 2;
-                    bufLen = lastHeader - currentHeader - 19;
+                    bufLen = currentHeaderEnd - currentHeader - 19;
                     lastModifiedHeader = strncpy(calloc(bufLen + 1, sizeof(char)), currentHeader + 19, bufLen);
                     break;
                 }
@@ -172,9 +168,16 @@ int main(int argc, char** argv)
             continue;
         }
 
+        // Print out which client you're responding to, so you know the server is working.
+        struct timespec currentTime;
+        clock_gettime(CLOCK_REALTIME_COARSE, &currentTime);
+        strftime(currentTimeStr, datetimeBufferSize, "%a, %d %h %Y %H:%M:%S GMT", gmtime(&currentTime.tv_sec));
+        getnameinfo((struct sockaddr*) &clientAddress, clientLen, clientIPStr, INET_ADDRSTRLEN + 1, 0, 0,
+                    NI_NUMERICHOST);
+        printf("[%s] Responding to %s's request for %s...\n", currentTimeStr, clientIPStr, URL);
+
         // Grab the time the file was last modified for later.
         char* findPtr;
-        char* lastModifiedStr = calloc(datetimeBufferSize, sizeof(char));
         lastModifiedDateTime = *gmtime(&fileData.st_mtim.tv_sec);
         size_t lastModifiedTimeLen = strftime(lastModifiedStr, datetimeBufferSize, "%a, %d %h %Y %H:%M:%S GMT", &lastModifiedDateTime);
 
@@ -189,12 +192,11 @@ int main(int argc, char** argv)
                 FILE* currentFile = fopen(URL, "r");
                 if (not currentFile)
                     goto FileNotFound;
-                // Store the total buffer length for the Content-Length field.
+                // Read the file into the buffer so it can be sent out.
                 fread(buffer + bufLen, sizeof(char), (bufSize - bufLen) / sizeof(char), currentFile);
             }
             else
             {
-                puts("Conditional GET!");
                 findPtr = strstr(buffer, "Content-Length");
                 findPtr[0] = '\r';
                 findPtr[1] = '\n';
@@ -217,7 +219,7 @@ int main(int argc, char** argv)
                 continue;
             }
 
-            // Store the total buffer length for the Content-Length field.
+            // Read the file into the buffer so it can be sent out.
             fread(buffer + bufLen, sizeof(char), (bufSize - bufLen) / sizeof(char), currentFile);
         }
         Send(clientSock, buffer, strlen(buffer));
