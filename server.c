@@ -181,8 +181,8 @@ int main(int argc, char** argv)
         if (*lastModifiedHeader) // Check if it's a conditional GET request or not.
         {
             bufLen = (size_t) sprintf(buffer,
-                    "HTTP/1.1 304 Not Modified\r\nDate: %s\r\nConnection: close\r\nLast-Modified: %s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: 0000\r\n\r\n",
-                    currentTimeStr, lastModifiedStr);
+                    "HTTP/1.1 304 Not Modified\r\nDate: %s\r\nConnection: close\r\nLast-Modified: %s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n",
+                    currentTimeStr, lastModifiedStr, fileData.st_size - 1);
             // Check if the file has been modified at a time different than what the client says.
             if (strncmp(lastModifiedHeader, lastModifiedStr, lastModifiedTimeLen) != 0)
             {
@@ -190,7 +190,7 @@ int main(int argc, char** argv)
                 if (not currentFile)
                     goto FileNotFound;
                 // Store the total buffer length for the Content-Length field.
-                bufLen += fread(buffer + bufLen, sizeof(char), (bufSize - bufLen) / sizeof(char), currentFile);
+                fread(buffer + bufLen, sizeof(char), (bufSize - bufLen) / sizeof(char), currentFile);
             }
             else
             {
@@ -208,8 +208,8 @@ int main(int argc, char** argv)
             FILE* currentFile = fopen(URL, "r");
             if (not currentFile)
                 goto FileNotFound;
-            bufLen = (size_t) sprintf(buffer, "HTTP/1.1 200 OK\r\nDate: %s\r\nConnection: close\r\nLast-Modified: %s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: 0000\r\n\r\n",
-                                      currentTimeStr, lastModifiedStr);
+            bufLen = (size_t) sprintf(buffer, "HTTP/1.1 200 OK\r\nDate: %s\r\nConnection: close\r\nLast-Modified: %s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n",
+                                      currentTimeStr, lastModifiedStr, fileData.st_size - 1);
 
             if (fileData.st_size > bufSize - bufLen - 1) // Nope, not sending anything over 8 MiB.
             {   // Honestly, supporting that in C is out of the scope of this assignment.
@@ -218,17 +218,8 @@ int main(int argc, char** argv)
             }
 
             // Store the total buffer length for the Content-Length field.
-            bufLen += fread(buffer + bufLen, sizeof(char), (bufSize - bufLen) / sizeof(char), currentFile);
+            fread(buffer + bufLen, sizeof(char), (bufSize - bufLen) / sizeof(char), currentFile);
         }
-        // So, here's the deal:
-        // I padded the length with 4 zeroes, since I'm only using one buffer and I can't read the file before writing
-        // the headers. We write the correct length to the file, then use memmove to push the end of the string forward
-        // and remove the padding.
-        findPtr = strstr(buffer, "\r\n\r\n");
-        int numLen = sprintf(findPtr - 4, "%ld", bufLen);
-        findPtr[numLen] = '\r';
-        if (numLen != 4)
-            memmove(findPtr - 4 + numLen, findPtr, strlen(findPtr));
         Send(clientSock, buffer, strlen(buffer));
     }
 }
