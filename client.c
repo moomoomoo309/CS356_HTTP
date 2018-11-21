@@ -11,9 +11,7 @@
 int main(int argc, char** argv)
 {
     if (argv++, --argc != 1)
-    {
-        error("1 argument expected, got %d.\r\nUsage: %s (URL)", argc + 1, *(argv - 1));
-    }
+        error("1 argument expected, got %d.\nUsage: %s (URL)", argc + 1, *(argv - 1));
 
     char* buffer = malloc(bufSize);
 
@@ -74,7 +72,7 @@ int main(int argc, char** argv)
             goto EmptyCache;
         cacheLastModifiedTime = strncpy(calloc(bufLen, sizeof(char)), findPtr + 2, bufLen - 2);
         bufLen = (size_t) sprintf(buffer, "GET %s HTTP/1.1\r\nHost: %s:%s\r\nIf-Modified-Since: %s\r\n\r\n", filePath,
-                URL, port, cacheLastModifiedTime);
+                                  URL, port, cacheLastModifiedTime);
         buffer[bufLen] = 0;
         if (not Send(sock, buffer, strlen(buffer) + 1))
             error("Could not send request to server after %d retries.", numRetries);
@@ -92,7 +90,7 @@ int main(int argc, char** argv)
     // Get the server's response.
     if (not Recv(sock, buffer, bufSize))
     {
-        error("Could not receive request from server after %d retries", numRetries);
+        error("Could not receive request from server after %d retries.", numRetries);
         return -1;
     }
 
@@ -130,7 +128,7 @@ int main(int argc, char** argv)
             // Fall through!
         case 200:
             // Print out the contents of the file and write it to the cache.
-            content = strstr(buffer, "\r\n\r\n") + 4;
+            content = strstr(buffer, "\r\n\r") + 4;
             puts("File contents:");
             puts(content);
             fclose(cache);
@@ -143,13 +141,13 @@ int main(int argc, char** argv)
             fputs(content, cache);
             break;
         case 404:
-            printf("File %s not found!\r\n", filePath);
+            printf("File %s not found!\n", filePath);
             break;
         case 0: // Empty string as a response.
             puts("Server did not respond, or responded with an empty string.");
             break;
         default:
-            error("HTTP Status code %d not supported!\r\n", statusCode);
+            error("HTTP Status code %d not supported!", statusCode);
             break;
     }
 
