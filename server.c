@@ -103,7 +103,7 @@ int main(int argc, char** argv)
 
     for (;;) // K&R infinite loop :^)
     {
-        lastModifiedHeader = NULL;
+        lastModifiedHeader = "";
         if (serverSock == -1)
             return SIGINT;
         // Make sure the socket is closed if it wasn't closed before.
