@@ -1,10 +1,8 @@
 #include <stdio.h>
-#include <strings.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <memory.h>
 #include <unistd.h>
-#include <time.h>
 #include "httpShared.h"
 
 

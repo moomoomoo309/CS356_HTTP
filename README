@@ -8,7 +8,12 @@ Testing environment:
     Command lines:
         Can be compiled manually as follows:
             1. Ensure cmake and GNU Make are installed.
-            2. cd into this directory.
-            3. Run `cmake .`
-            4. Run `make`
+                Windows - Install cygwin and in the installation process, select 'cmake' and 'make' if not already installed.
+                MacOS - Install homebrew. Run `brew install make cmake`.
+                Ubuntu - Run `sudo apt-get -y install make cmake`.
+            2. Download CMakeLists.txt, client.c, server.c, and httpShared.h into a directory.
+            3. cd into the directory containing CMakeLists.txt, client.c, server.c, and httpShared.h.
+            4. Run `cmake .`
+            5. Run `make`
+            6. The executables CS356_HTTP_Client and CS356_HTTP_Server will be generated in that directory. (Possibly with a .exe extension on Windows)
 

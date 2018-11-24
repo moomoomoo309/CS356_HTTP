@@ -4,27 +4,24 @@
  */
 
 #include <stdio.h>
-#include <sys/socket.h>
-#include <strings.h>
-#include <netinet/in.h>
 #include <stdlib.h>
-#include <memory.h>
-#include <sys/time.h>
-#include <time.h>
+#include <unistd.h>
 #include <sys/stat.h>
-#include <arpa/inet.h>
-#include <zconf.h>
-#include <netdb.h>
-#include <math.h>
+#include <sys/socket.h>
 #include <signal.h>
+#include <memory.h>
+#include <time.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 #include "httpShared.h"
 
 int clientSock;
 int serverSock;
 
-static void closeSocket(int signalNum)
+static void closeSocket(int signal)
 {
-    if (signalNum == SIGINT)
+    if (signal == SIGINT)
     {
         puts("Closing sockets...");
         close(serverSock);
@@ -120,9 +117,9 @@ int main(int argc, char** argv)
         }
 
         // Grab the client's response and put it in the buffer.
-        if (not Recv(clientSock, buffer, bufSize))
+        if (recv(clientSock, buffer, bufSize, 0) == -1)
         {
-            error("%d retries exceeded. Closing connection.\n", numRetries);
+            perror("Socket failure on recv.");
             continue;
         }
 
@@ -161,7 +158,8 @@ int main(int argc, char** argv)
                    "HTTP/1.1 404 Not Found\r\nContent-Length: 136\r\nConnection: close\r\nContent-Type: text/html\r\n\r\n<html>"
                    "<head>\r\n<title>404 Not Found</title>\r\n</head><body>\r\n<h1>Not Found</h1>\r\nThe requested URL was"
                    " not found on this server.\r\n</body></html>\r\n\0");
-            Send(clientSock, buffer, strlen(buffer));
+            if (send(clientSock, buffer, strlen(buffer), 0) == -1)
+                perror("Socket failure on send.");
             continue;
         }
 
@@ -196,7 +194,8 @@ int main(int argc, char** argv)
                 findPtr[0] = '\r';
                 findPtr[1] = '\n';
                 findPtr[2] = '\0';
-                Send(clientSock, buffer, strlen(buffer));
+                if (send(clientSock, buffer, strlen(buffer), 0) == -1)
+                    perror("Socket failure on send.");
                 continue;
             }
         }
@@ -208,16 +207,17 @@ int main(int argc, char** argv)
             bufLen = (size_t) sprintf(buffer, "HTTP/1.1 200 OK\r\nDate: %s\r\nConnection: close\r\nLast-Modified: %s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n",
                                       currentTimeStr, lastModifiedStr, fileData.st_size - 1);
 
-            if (fileData.st_size > bufSize - bufLen - 1) // Nope, not sending anything over 8 MiB.
+            if (fileData.st_size > bufSize - bufLen - 1) // Nope, not sending anything over 8 KiB.
             {   // Honestly, supporting that in C is out of the scope of this assignment.
-                puts("This server will not serve files larger than 8MiB.");
+                puts("This server will not serve files larger than 8KiB.");
                 continue;
             }
 
             // Read the file into the buffer so it can be sent out.
             fread(buffer + bufLen, sizeof(char), (bufSize - bufLen) / sizeof(char), currentFile);
         }
-        Send(clientSock, buffer, strlen(buffer));
+        if (send(clientSock, buffer, strlen(buffer), 0) == -1)
+            perror("Socket failure on send.");
     }
 }
 
