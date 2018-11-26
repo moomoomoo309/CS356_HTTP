@@ -85,7 +85,7 @@ int main(int argc, char** argv)
     struct stat fileData;
     struct tm lastModifiedDateTime;
 
-    puts("Listening for incoming HTTP connections...");
+    printf("Listening for incoming HTTP connections on port %d...", serverPort);
     if (listen(serverSock, maxPending) < 0)
         perror("Could not listen on socket.\r\n");
 
