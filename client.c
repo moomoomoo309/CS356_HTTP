@@ -72,21 +72,21 @@ int main(int argc, char** argv)
         bufLen = (size_t) sprintf(buffer, "GET %s HTTP/1.1\r\nHost: %s:%s\r\nIf-Modified-Since: %s\r\n\r\n", filePath,
                                   URL, port, cacheLastModifiedTime);
         buffer[bufLen] = 0;
-        if (not Send(sock, buffer, strlen(buffer) + 1))
+        if (not send(sock, buffer, strlen(buffer) + 1, 0))
             error("Could not send request to server after %d retries.", numRetries);
     }
     else //The cache was empty
     {
         EmptyCache:
         sprintf(buffer, "GET %s HTTP/1.1\r\nHost: %s:%s\r\n\r\n", filePath, URL, port);
-        if (not Send(sock, buffer, strlen(buffer) + 1))
+        if (not send(sock, buffer, strlen(buffer) + 1, 0))
             error("Could not send request to server after %d retries.", numRetries);
     }
 
     printf("Sent the following request to the server:\n%s\n", buffer);
 
     // Get the server's response.
-    if (not Recv(sock, buffer, bufSize))
+    if (not recv(sock, buffer, bufSize, 0))
     {
         error("Could not receive request from server after %d retries.", numRetries);
         return -1;
